@@ -120,6 +120,70 @@ for _, row in df_hourly.iterrows():
     }
 HOURLY_PAYLOAD = json.dumps(hourly_map)
 
+
+def background_telemetry_poller():
+    global LIVE_PAYLOAD, SUMMARY_PAYLOAD, live_records
+    import time
+    import urllib.request
+    url_status = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
+    headers = {"User-Agent": "Mozilla/5.0 (UrbanMobilityLakehouse/1.0)"}
+    
+    print("[*] Background Live Telemetry Poller thread started (Polling every 20s)...")
+    while True:
+        time.sleep(20)
+        try:
+            req = urllib.request.Request(url_status, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                status_json = json.loads(resp.read().decode("utf-8"))
+                stations_status = {s["station_id"]: s for s in status_json["data"]["stations"]}
+                last_updated = status_json.get("last_updated", int(time.time()))
+                
+                updated_records = []
+                total_fleet = 0
+                for rec in live_records:
+                    sid = rec["station_id"]
+                    if sid in stations_status:
+                        st = stations_status[sid]
+                        bikes = int(st.get("num_bikes_available", 0))
+                        ebikes = int(st.get("num_ebikes_available", 0))
+                        docks = int(st.get("num_docks_available", 0))
+                        cap = rec["capacity"] if rec["capacity"] > 0 else (bikes + docks)
+                        util = round((bikes / cap) * 100, 1) if cap > 0 else 0.0
+                        
+                        if util <= 5:
+                            op_status = "Depleted / Empty"
+                        elif util < 20:
+                            op_status = "Low Availability"
+                        elif util > 85:
+                            op_status = "Surge / Near Full"
+                        else:
+                            op_status = "Optimal Balance"
+                            
+                        rec["bikes_available"] = bikes
+                        rec["ebikes_available"] = ebikes
+                        rec["docks_available"] = docks
+                        rec["utilization_rate"] = util
+                        rec["operational_status"] = op_status
+                        rec["last_reported"] = st.get("last_reported", last_updated)
+                        total_fleet += bikes
+                    updated_records.append(rec)
+                    
+                LIVE_PAYLOAD = json.dumps(updated_records)
+                
+                sum_dict = json.loads(SUMMARY_PAYLOAD)
+                sum_dict["total_live_fleet"] = total_fleet
+                sum_dict["last_live_sync_epoch"] = last_updated
+                sum_dict["timestamp"] = pd.Timestamp.now().isoformat()
+                SUMMARY_PAYLOAD = json.dumps(sum_dict)
+                print(f"[LIVE GBFS SYNC] Updated {len(updated_records):,} stations. Current live fleet: {total_fleet:,} bikes.")
+        except Exception as e:
+            print(f"[!] Warning polling live telemetry: {e}")
+
+
+import threading
+poller_thread = threading.Thread(target=background_telemetry_poller, daemon=True)
+poller_thread.start()
+
 print("[+] Visualizer Cache Ready!")
 
 

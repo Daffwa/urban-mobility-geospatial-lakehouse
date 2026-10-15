@@ -397,7 +397,8 @@
     </div>
     <div class="live-badge">
       <div class="live-pulse"></div>
-      <span>LIVE GBFS FEED: 2,519 STATIONS</span>
+      <span id="live-time-str">LIVE GBFS FEED: 2,519 STATIONS</span>
+      <span id="live-sync-indicator" style="font-size: 10px; color: #94a3b8; margin-left: 6px; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 8px;">NEXT SYNC IN 15s</span>
     </div>
   </div>
 
@@ -420,8 +421,8 @@
     </div>
     <div class="kpi-card glass-panel" style="border-left-color: #34d399;">
       <div class="kpi-label">Live Active Fleet</div>
-      <div class="kpi-value" id="kpi-fleet">34,255</div>
-      <div class="kpi-sub">Bikes on Streets</div>
+      <div class="kpi-value" id="kpi-fleet" style="transition: color 0.5s ease;">34,043</div>
+      <div class="kpi-sub" id="live-fleet-sub">&bull; Live Streaming Feed</div>
     </div>
     <div class="kpi-card glass-panel" style="border-left-color: #fbbf24;">
       <div class="kpi-label">Avg Urban Velocity</div>
@@ -854,6 +855,49 @@
         console.log("Visualizer initialized successfully with full hourly pulse!");
       } catch (err) {
         console.error("Error loading visualizer data:", err);
+      }
+    }
+
+    // Live Continuous Telemetry Poller (Every 15 Seconds)
+    let syncCountdown = 15;
+    setInterval(() => {
+      syncCountdown--;
+      if (syncCountdown <= 0) {
+        syncCountdown = 15;
+        refreshLiveTelemetry();
+      }
+      const syncBadge = document.getElementById('live-sync-indicator');
+      if (syncBadge) {
+        syncBadge.innerText = `NEXT SYNC IN ${syncCountdown}s`;
+      }
+    }, 1000);
+
+    async function refreshLiveTelemetry() {
+      try {
+        const [liveRes, sumRes] = await Promise.all([
+          fetch('/api/live_stations').then(r => r.json()),
+          fetch('/api/summary').then(r => r.json())
+        ]);
+        liveData = liveRes;
+        const fleetEl = document.getElementById('kpi-fleet');
+        const newCount = sumRes.total_live_fleet.toLocaleString();
+        fleetEl.innerText = newCount;
+
+        // Visual flash highlight when live telemetry syncs
+        fleetEl.style.color = '#10b981';
+        setTimeout(() => { fleetEl.style.color = '#f8fafc'; }, 1200);
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        const timeBadge = document.getElementById('live-time-str');
+        if (timeBadge) {
+          timeBadge.innerText = `LIVE GBFS FEED • 2,519 STATIONS (SYNCED ${timeStr})`;
+        }
+
+        renderLayers();
+        console.log(`[LIVE CLIENT REFRESH] Telemetry updated at ${timeStr}: ${newCount} bikes`);
+      } catch (e) {
+        console.warn("Auto-refresh error:", e);
       }
     }
 
