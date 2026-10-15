@@ -109,6 +109,17 @@ SUMMARY_PAYLOAD = json.dumps({
     "timestamp": pd.Timestamp.now().isoformat()
 })
 
+# Hourly map: { hour: { cell_id: { count, speed } } }
+hourly_map = {h: {} for h in range(24)}
+for _, row in df_hourly.iterrows():
+    h = int(row["pickup_hour"])
+    cell = str(row["h3_pickup_res8"])
+    hourly_map[h][cell] = {
+        "count": int(row["hourly_trip_count"]),
+        "speed": round(float(row["avg_speed"]), 1)
+    }
+HOURLY_PAYLOAD = json.dumps(hourly_map)
+
 print("[+] Visualizer Cache Ready!")
 
 
@@ -155,6 +166,11 @@ class VisualizerRequestHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(LIVE_PAYLOAD.encode("utf-8"))
+        elif self.path == "/api/hourly_pulse":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(HOURLY_PAYLOAD.encode("utf-8"))
         else:
             self.send_error(404, "Endpoint Not Found")
 

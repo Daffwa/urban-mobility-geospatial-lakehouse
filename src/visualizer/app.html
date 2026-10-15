@@ -482,6 +482,9 @@
         <span id="hour-val">17:00 (Evening Rush)</span>
       </div>
       <input type="range" id="hour-slider" min="0" max="23" step="1" value="17">
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button id="btn-play-24h" style="flex: 1; padding: 7px 12px; background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 6px; color: #38bdf8; font-weight: 600; cursor: pointer; font-size: 11px; transition: all 0.2s;">&#9654; Play 24H Cycle</button>
+      </div>
     </div>
 
     <div class="panel-section-title">Architecture Specs</div>
@@ -528,11 +531,15 @@
     let hexData = null;
     let odData = null;
     let liveData = null;
+    let hourlyData = null;
     let elevationScale = 0.25;
     let minArcTrips = 10;
+    let currentHour = 17;
     let showHexagons = true;
     let showArcs = true;
     let showStations = true;
+    let isPlaying = false;
+    let playTimer = null;
 
     const tooltip = document.getElementById('tooltip');
 
@@ -587,10 +594,16 @@
       // Hexagon Hover
       if (obj.properties && obj.properties.h3_index) {
         const p = obj.properties;
+        let activeHourCount = p.total_pickups;
+        if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][p.h3_index]) {
+          activeHourCount = hourlyData[currentHour][p.h3_index].count;
+        }
+
         tooltip.innerHTML = `
           <div class="tooltip-title">UBER H3 HEXAGON (RES ${p.resolution})</div>
           <div class="tooltip-row"><span>H3 Cell ID:</span> <span class="val">${p.h3_index}</span></div>
-          <div class="tooltip-row"><span>Total Pickups:</span> <span class="val" style="color: #38bdf8;">${p.total_pickups.toLocaleString()}</span></div>
+          <div class="tooltip-row"><span>Total All-Time:</span> <span class="val" style="color: #38bdf8;">${p.total_pickups.toLocaleString()} trips</span></div>
+          <div class="tooltip-row"><span>At Hour ${currentHour}:00:</span> <span class="val" style="color: #f43f5e; font-weight:700;">${activeHourCount.toLocaleString()} trips</span></div>
           <div class="tooltip-row"><span>Demand Tier:</span> <span class="val">${p.demand_tier}</span></div>
           <div class="tooltip-row"><span>Avg Trip Speed:</span> <span class="val">${p.avg_speed_kmh} km/h</span></div>
           <div class="tooltip-row"><span>Avg Duration:</span> <span class="val">${p.avg_duration_min} min</span></div>
@@ -632,15 +645,34 @@
             data: hexData,
             extruded: true,
             wireframe: true,
-            getElevation: f => f.properties.total_pickups * elevationScale,
-            getFillColor: f => getHexColor(f.properties.total_pickups),
+            getElevation: f => {
+              const cell = f.properties.h3_index;
+              let count = f.properties.total_pickups;
+              if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][cell]) {
+                count = hourlyData[currentHour][cell].count * 18;
+              }
+              return Math.max(30, count * elevationScale);
+            },
+            getFillColor: f => {
+              const cell = f.properties.h3_index;
+              let count = f.properties.total_pickups;
+              if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][cell]) {
+                count = hourlyData[currentHour][cell].count * 18;
+              }
+              return getHexColor(count);
+            },
+            updateTriggers: {
+              getElevation: [elevationScale, currentHour, hourlyData],
+              getFillColor: [currentHour, hourlyData]
+            },
             getLineColor: [255, 255, 255, 40],
             lineWidthMinPixels: 1,
             pickable: true,
             autoHighlight: true,
             highlightColor: [255, 255, 255, 100],
             transitions: {
-              getElevation: 600
+              getElevation: 300,
+              getFillColor: 300
             }
           })
         );
@@ -652,12 +684,15 @@
         layers.push(
           new deck.ArcLayer({
             id: 'od-arcs-layer',
-            data: filteredOD,
+            data: [...filteredOD],
             getSourcePosition: d => d.origin,
             getTargetPosition: d => d.destination,
             getSourceColor: [0, 242, 254, 200], // Cyan
             getTargetColor: [244, 63, 94, 240], // Coral Red
             getWidth: d => Math.min(6, Math.max(1.8, Math.log2(d.trip_count) * 1.2)),
+            updateTriggers: {
+              getWidth: [minArcTrips]
+            },
             pickable: true,
             autoHighlight: true,
             highlightColor: [255, 255, 255, 255]
@@ -747,32 +782,65 @@
     document.getElementById('arc-filter-slider').addEventListener('input', e => {
       minArcTrips = parseInt(e.target.value);
       document.getElementById('arc-filter-val').innerText = `\u2265 ${minArcTrips} trips`;
+      if (odData) {
+        const filtered = odData.filter(d => d.trip_count >= minArcTrips);
+        document.getElementById('kpi-corridors').innerText = filtered.length;
+        populateCorridors(filtered);
+      }
       renderLayers();
     });
 
-    document.getElementById('hour-slider').addEventListener('input', e => {
-      const h = parseInt(e.target.value);
+    function updateHourDisplay(h) {
       let cat = "Night";
       if (h >= 6 && h < 10) cat = "Morning Rush";
       else if (h >= 10 && h < 16) cat = "Midday";
       else if (h >= 16 && h < 20) cat = "Evening Rush";
       document.getElementById('hour-val').innerText = `${h.toString().padStart(2, '0')}:00 (${cat})`;
+    }
+
+    document.getElementById('hour-slider').addEventListener('input', e => {
+      currentHour = parseInt(e.target.value);
+      updateHourDisplay(currentHour);
+      renderLayers();
+    });
+
+    // 24H Cycle Animation Player
+    const btnPlay = document.getElementById('btn-play-24h');
+    btnPlay.addEventListener('click', () => {
+      if (isPlaying) {
+        clearInterval(playTimer);
+        isPlaying = false;
+        btnPlay.innerHTML = '&#9654; Play 24H Cycle';
+        btnPlay.style.background = 'rgba(56, 189, 248, 0.15)';
+      } else {
+        isPlaying = true;
+        btnPlay.innerHTML = '&#9646;&#9646; Pause Cycle';
+        btnPlay.style.background = 'rgba(239, 68, 68, 0.3)';
+        playTimer = setInterval(() => {
+          currentHour = (currentHour + 1) % 24;
+          document.getElementById('hour-slider').value = currentHour;
+          updateHourDisplay(currentHour);
+          renderLayers();
+        }, 800);
+      }
     });
 
     // Fetch initial datasets
     async function loadData() {
       try {
         console.log("Loading datasets from visualizer API...");
-        const [hexRes, odRes, liveRes, sumRes] = await Promise.all([
+        const [hexRes, odRes, liveRes, sumRes, hourRes] = await Promise.all([
           fetch('/api/hexagons').then(r => r.json()),
           fetch('/api/od_flows').then(r => r.json()),
           fetch('/api/live_stations').then(r => r.json()),
-          fetch('/api/summary').then(r => r.json())
+          fetch('/api/summary').then(r => r.json()),
+          fetch('/api/hourly_pulse').then(r => r.json())
         ]);
 
         hexData = hexRes;
         odData = odRes;
         liveData = liveRes;
+        hourlyData = hourRes;
 
         // Update KPI values
         document.getElementById('kpi-trips').innerText = sumRes.total_cleansed_trips.toLocaleString();
@@ -783,7 +851,7 @@
 
         populateCorridors(odData);
         renderLayers();
-        console.log("Visualizer initialized successfully!");
+        console.log("Visualizer initialized successfully with full hourly pulse!");
       } catch (err) {
         console.error("Error loading visualizer data:", err);
       }
