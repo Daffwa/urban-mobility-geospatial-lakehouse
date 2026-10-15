@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: urban-mobility
+  labels:
+    app.kubernetes.io/name: urban-mobility-geospatial-lakehouse
+    app.kubernetes.io/part-of: big-data-infrastructure
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgis-pvc
+  namespace: urban-mobility
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgis-warehouse
+  namespace: urban-mobility
+  labels:
+    app: postgis-warehouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgis-warehouse
+  template:
+    metadata:
+      labels:
+        app: postgis-warehouse
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:16-3.4-alpine
+          env:
+            - name: POSTGRES_DB
+              value: urban_mobility_db
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgis_password
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgis-storage
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+      volumes:
+        - name: postgis-storage
+          persistentVolumeClaim:
+            claimName: postgis-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgis-service
+  namespace: urban-mobility
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgis-warehouse
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mobility-visualizer
+  namespace: urban-mobility
+  labels:
+    app: mobility-visualizer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mobility-visualizer
+  template:
+    metadata:
+      labels:
+        app: mobility-visualizer
+    spec:
+      containers:
+        - name: visualizer
+          image: ghcr.io/daffwa/urban-mobility-visualizer:latest
+          env:
+            - name: PORT
+              value: "8060"
+            - name: POSTGRES_HOST
+              value: "postgis-service.urban-mobility.svc.cluster.local"
+            - name: POSTGRES_DB
+              value: "urban_mobility_db"
+          ports:
+            - containerPort: 8060
+              name: http
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mobility-visualizer-service
+  namespace: urban-mobility
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8060
+      name: http
+  selector:
+    app: mobility-visualizer

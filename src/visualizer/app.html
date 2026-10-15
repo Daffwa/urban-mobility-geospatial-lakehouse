@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Urban Mobility Geospatial Lakehouse | 3D Deck.gl + Uber H3</title>
+  
+  <!-- MapLibre GL CSS & JS -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  
+  <!-- Deck.gl Standalone Bundle -->
+  <script src="https://unpkg.com/deck.gl@8.9.33/dist.min.js"></script>
+
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background: #080b10;
+      color: #e2e8f0;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #map-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Glassmorphism Panels */
+    .glass-panel {
+      background: rgba(13, 17, 23, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.2);
+      border-radius: 14px;
+      z-index: 10;
+      pointer-events: auto;
+    }
+
+    /* Header Bar */
+    #header-bar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #04101e;
+      font-size: 18px;
+      box-shadow: 0 0 15px rgba(79, 172, 254, 0.5);
+    }
+
+    .brand-title h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title p {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 400;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #34d399;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .live-pulse {
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #10b981;
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* KPI Floating Ribbon */
+    #kpi-ribbon {
+      position: absolute;
+      top: 92px;
+      left: 20px;
+      display: flex;
+      gap: 12px;
+      z-index: 10;
+    }
+
+    .kpi-card {
+      padding: 12px 18px;
+      min-width: 140px;
+      border-left: 3px solid #38bdf8;
+    }
+
+    .kpi-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #94a3b8;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .kpi-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .kpi-sub {
+      font-size: 10px;
+      color: #38bdf8;
+      margin-top: 2px;
+    }
+
+    /* Left Control Panel */
+    #control-panel {
+      position: absolute;
+      top: 190px;
+      left: 20px;
+      width: 320px;
+      padding: 20px;
+      max-height: calc(100vh - 210px);
+      overflow-y: auto;
+    }
+
+    .panel-section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #64748b;
+      font-weight: 700;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 6px;
+    }
+
+    .control-group {
+      margin-bottom: 16px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+
+    /* Switch Styling */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 22px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155;
+      transition: .3s;
+      border-radius: 22px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px; width: 16px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider { background-color: #0284c7; }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    /* Range Sliders */
+    .range-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+
+    input[type=range] {
+      width: 100%;
+      height: 5px;
+      border-radius: 5px;
+      background: #334155;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      box-shadow: 0 0 8px #38bdf8;
+    }
+
+    /* Right Corridors Panel */
+    #corridors-panel {
+      position: absolute;
+      top: 92px;
+      right: 20px;
+      width: 330px;
+      padding: 20px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+
+    .corridor-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      transition: all 0.2s;
+    }
+
+    .corridor-item:hover {
+      background: rgba(2, 132, 199, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      transform: translateX(-3px);
+    }
+
+    .corridor-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+    }
+
+    .corridor-stats {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .corridor-tag {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 10px;
+    }
+
+    /* Floating Tooltip */
+    #tooltip {
+      position: absolute;
+      display: none;
+      padding: 12px 16px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+      pointer-events: none;
+      z-index: 100;
+      font-size: 12px;
+      line-height: 1.5;
+      min-width: 200px;
+    }
+
+    .tooltip-title {
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+    }
+
+    .tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: #cbd5e1;
+    }
+
+    .tooltip-row span.val {
+      font-weight: 600;
+      color: #ffffff;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* 3D Legend */
+    #legend-box {
+      position: absolute;
+      bottom: 24px;
+      left: 360px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    .legend-gradient {
+      width: 140px;
+      height: 10px;
+      border-radius: 5px;
+      background: linear-gradient(90deg, #00f2fe 0%, #38bdf8 35%, #fbbf24 70%, #ef4444 100%);
+    }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      width: 140px;
+      font-size: 9px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Map Container -->
+  <div id="map-container"></div>
+
+  <!-- Header Bar -->
+  <div id="header-bar" class="glass-panel">
+    <div class="brand">
+      <div class="brand-logo">H3</div>
+      <div class="brand-title">
+        <h1>Spatio-Temporal Urban Mobility Lakehouse <span style="font-size: 11px; font-weight: 500; background: #0284c7; padding: 2px 8px; border-radius: 12px;">Uber H3 + PostGIS</span></h1>
+        <p>Discrete Global Grid System (DGGS) &bull; Real-Time GBFS Telemetry &bull; Origin-Destination 3D Vectors</p>
+      </div>
+    </div>
+    <div class="live-badge">
+      <div class="live-pulse"></div>
+      <span>LIVE GBFS FEED: 2,519 STATIONS</span>
+    </div>
+  </div>
+
+  <!-- KPI Ribbon -->
+  <div id="kpi-ribbon">
+    <div class="kpi-card glass-panel" style="border-left-color: #00f2fe;">
+      <div class="kpi-label">Cleansed Trips</div>
+      <div class="kpi-value" id="kpi-trips">161,890</div>
+      <div class="kpi-sub">&uarr; Silver Layer Fact</div>
+    </div>
+    <div class="kpi-card glass-panel" style="border-left-color: #38bdf8;">
+      <div class="kpi-label">Active H3 Hexagons</div>
+      <div class="kpi-value" id="kpi-hexagons">38</div>
+      <div class="kpi-sub">Resolution 8 (~460m)</div>
+    </div>
+    <div class="kpi-card glass-panel" style="border-left-color: #818cf8;">
+      <div class="kpi-label">3D OD Corridors</div>
+      <div class="kpi-value" id="kpi-corridors">625</div>
+      <div class="kpi-sub">Flow Vectors</div>
+    </div>
+    <div class="kpi-card glass-panel" style="border-left-color: #34d399;">
+      <div class="kpi-label">Live Active Fleet</div>
+      <div class="kpi-value" id="kpi-fleet">34,255</div>
+      <div class="kpi-sub">Bikes on Streets</div>
+    </div>
+    <div class="kpi-card glass-panel" style="border-left-color: #fbbf24;">
+      <div class="kpi-label">Avg Urban Velocity</div>
+      <div class="kpi-value" id="kpi-speed">11.7 km/h</div>
+      <div class="kpi-sub">Haversine Geodesic</div>
+    </div>
+  </div>
+
+  <!-- Left Control Panel -->
+  <div id="control-panel" class="glass-panel">
+    <div class="panel-section-title">3D Visualization Layers</div>
+    
+    <div class="control-group">
+      <div class="toggle-row">
+        <span>3D H3 Hexagon Columns</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-hexagons" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span>3D OD Flow Arcs</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-arcs" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span>Real-Time Live Stations</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-stations" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel-section-title">Spatial Extrusion & Filter</div>
+    <div class="control-group">
+      <div class="range-label">
+        <span>3D Column Elevation</span>
+        <span id="elevation-val">1.0x</span>
+      </div>
+      <input type="range" id="elevation-slider" min="0.1" max="2.5" step="0.1" value="1.0">
+    </div>
+
+    <div class="control-group">
+      <div class="range-label">
+        <span>Min Corridor Trips Filter</span>
+        <span id="arc-filter-val">&ge; 10 trips</span>
+      </div>
+      <input type="range" id="arc-filter-slider" min="5" max="100" step="5" value="10">
+    </div>
+
+    <div class="panel-section-title">Diurnal Mobility Pulse (24h)</div>
+    <div class="control-group">
+      <div class="range-label">
+        <span>Diurnal Hour of Day</span>
+        <span id="hour-val">17:00 (Evening Rush)</span>
+      </div>
+      <input type="range" id="hour-slider" min="0" max="23" step="1" value="17">
+    </div>
+
+    <div class="panel-section-title">Architecture Specs</div>
+    <div style="font-size: 11px; color: #94a3b8; line-height: 1.6;">
+      <div>&bull; <b>DGGS Spec:</b> Uber H3 v4.5.0</div>
+      <div>&bull; <b>Spatial Engine:</b> PostGIS 3.4 (GIST)</div>
+      <div>&bull; <b>Lakehouse:</b> Apache Parquet Snappy</div>
+      <div>&bull; <b>K8s Status:</b> Cloud-Native Manifests Ready</div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Top Mobility Corridors -->
+  <div id="corridors-panel" class="glass-panel">
+    <div class="panel-section-title">Top Origin-Destination Corridors</div>
+    <div id="corridors-list">
+      <!-- Injected via JavaScript -->
+    </div>
+  </div>
+
+  <!-- Legend Box -->
+  <div id="legend-box" class="glass-panel">
+    <div>
+      <div style="font-size: 11px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px;">Hexagon Demand Density</div>
+      <div class="legend-gradient"></div>
+      <div class="legend-labels">
+        <span>Low (< 500)</span>
+        <span>Mid (2.5k)</span>
+        <span>Surge (10k+)</span>
+      </div>
+    </div>
+    <div style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 14px;">
+      <div style="font-size: 11px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px;">3D Arc Vectors</div>
+      <div style="font-size: 10px; color: #94a3b8; display: flex; gap: 8px;">
+        <span style="color: #00f2fe;">&#9679; Origin</span> &rarr; <span style="color: #f43f5e;">&#9679; Destination</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Tooltip -->
+  <div id="tooltip"></div>
+
+  <script>
+    // State management
+    let hexData = null;
+    let odData = null;
+    let liveData = null;
+    let elevationScale = 0.25;
+    let minArcTrips = 10;
+    let showHexagons = true;
+    let showArcs = true;
+    let showStations = true;
+
+    const tooltip = document.getElementById('tooltip');
+
+    // Color ramp for H3 hexagon density
+    function getHexColor(totalPickups) {
+      if (totalPickups >= 12000) return [239, 68, 68, 220];    // Crimson Red
+      if (totalPickups >= 6000)  return [251, 146, 60, 210];   // Neon Orange
+      if (totalPickups >= 2500)  return [250, 204, 21, 190];   // Amber Gold
+      if (totalPickups >= 800)   return [56, 189, 248, 180];   // Sky Blue
+      return [0, 242, 254, 160];                               // Soft Cyan
+    }
+
+    // Color ramp for live station operational status
+    function getStationColor(status) {
+      switch(status) {
+        case 'Optimal Balance':    return [52, 211, 153, 220]; // Emerald
+        case 'Low Availability':   return [251, 191, 36, 220]; // Amber
+        case 'Depleted / Empty':   return [244, 63, 94, 240];  // Red
+        case 'Surge / Near Full':  return [96, 165, 250, 220]; // Blue
+        default:                   return [148, 163, 184, 180];
+      }
+    }
+
+    // Initialize Deck.gl
+    const deckgl = new deck.DeckGL({
+      container: 'map-container',
+      mapLibre: maplibregl,
+      mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      initialViewState: {
+        longitude: -74.0450,
+        latitude: 40.7220,
+        zoom: 13.5,
+        pitch: 55,
+        bearing: -22
+      },
+      controller: true,
+      onHover: updateTooltip
+    });
+
+    function updateTooltip(info) {
+      if (!info.object) {
+        tooltip.style.display = 'none';
+        return;
+      }
+      
+      tooltip.style.display = 'block';
+      tooltip.style.left = (info.x + 15) + 'px';
+      tooltip.style.top = (info.y + 15) + 'px';
+
+      const obj = info.object;
+      
+      // Hexagon Hover
+      if (obj.properties && obj.properties.h3_index) {
+        const p = obj.properties;
+        tooltip.innerHTML = `
+          <div class="tooltip-title">UBER H3 HEXAGON (RES ${p.resolution})</div>
+          <div class="tooltip-row"><span>H3 Cell ID:</span> <span class="val">${p.h3_index}</span></div>
+          <div class="tooltip-row"><span>Total Pickups:</span> <span class="val" style="color: #38bdf8;">${p.total_pickups.toLocaleString()}</span></div>
+          <div class="tooltip-row"><span>Demand Tier:</span> <span class="val">${p.demand_tier}</span></div>
+          <div class="tooltip-row"><span>Avg Trip Speed:</span> <span class="val">${p.avg_speed_kmh} km/h</span></div>
+          <div class="tooltip-row"><span>Avg Duration:</span> <span class="val">${p.avg_duration_min} min</span></div>
+          <div class="tooltip-row"><span>Commuter Share:</span> <span class="val">${p.commuter_percentage}%</span></div>
+        `;
+      } 
+      // Arc Hover
+      else if (obj.origin_h3 && obj.dest_h3) {
+        tooltip.innerHTML = `
+          <div class="tooltip-title">3D ORIGIN-DESTINATION VECTOR</div>
+          <div class="tooltip-row"><span>Trips in Corridor:</span> <span class="val" style="color: #f43f5e;">${obj.trip_count.toLocaleString()}</span></div>
+          <div class="tooltip-row"><span>Avg Distance:</span> <span class="val">${obj.avg_distance_km} km</span></div>
+          <div class="tooltip-row"><span>Avg Travel Time:</span> <span class="val">${obj.avg_duration_min} min</span></div>
+          <div class="tooltip-row"><span>Avg Corridor Speed:</span> <span class="val">${obj.avg_speed_kmh} km/h</span></div>
+          <div class="tooltip-row"><span>Commuter Ratio:</span> <span class="val">${obj.commuter_pct}%</span></div>
+        `;
+      }
+      // Live Station Hover
+      else if (obj.station_id) {
+        tooltip.innerHTML = `
+          <div class="tooltip-title">LIVE SMART MOBILITY HUB</div>
+          <div class="tooltip-row"><span>Station:</span> <span class="val">${obj.name}</span></div>
+          <div class="tooltip-row"><span>Bikes Available:</span> <span class="val" style="color: #34d399;">${obj.bikes_available} (${obj.ebikes_available} e-bikes)</span></div>
+          <div class="tooltip-row"><span>Docks Free:</span> <span class="val">${obj.docks_available}</span></div>
+          <div class="tooltip-row"><span>Capacity:</span> <span class="val">${obj.capacity}</span></div>
+          <div class="tooltip-row"><span>Live Status:</span> <span class="val">${obj.operational_status}</span></div>
+        `;
+      }
+    }
+
+    function renderLayers() {
+      const layers = [];
+
+      // 1. 3D H3 Hexagon Extruded Columns
+      if (showHexagons && hexData) {
+        layers.push(
+          new deck.GeoJsonLayer({
+            id: 'h3-hexagons-layer',
+            data: hexData,
+            extruded: true,
+            wireframe: true,
+            getElevation: f => f.properties.total_pickups * elevationScale,
+            getFillColor: f => getHexColor(f.properties.total_pickups),
+            getLineColor: [255, 255, 255, 40],
+            lineWidthMinPixels: 1,
+            pickable: true,
+            autoHighlight: true,
+            highlightColor: [255, 255, 255, 100],
+            transitions: {
+              getElevation: 600
+            }
+          })
+        );
+      }
+
+      // 2. 3D Origin-Destination Arcs
+      if (showArcs && odData) {
+        const filteredOD = odData.filter(d => d.trip_count >= minArcTrips);
+        layers.push(
+          new deck.ArcLayer({
+            id: 'od-arcs-layer',
+            data: filteredOD,
+            getSourcePosition: d => d.origin,
+            getTargetPosition: d => d.destination,
+            getSourceColor: [0, 242, 254, 200], // Cyan
+            getTargetColor: [244, 63, 94, 240], // Coral Red
+            getWidth: d => Math.min(6, Math.max(1.8, Math.log2(d.trip_count) * 1.2)),
+            pickable: true,
+            autoHighlight: true,
+            highlightColor: [255, 255, 255, 255]
+          })
+        );
+      }
+
+      // 3. Real-Time Live Stations Scatterplot
+      if (showStations && liveData) {
+        layers.push(
+          new deck.ScatterplotLayer({
+            id: 'live-stations-layer',
+            data: liveData,
+            getPosition: d => d.coordinates,
+            getRadius: 28,
+            getFillColor: d => getStationColor(d.operational_status),
+            getLineColor: [255, 255, 255, 150],
+            lineWidthMinPixels: 1,
+            stroked: true,
+            pickable: true,
+            radiusMinPixels: 4,
+            radiusMaxPixels: 14
+          })
+        );
+      }
+
+      deckgl.setProps({ layers });
+    }
+
+    // Populate Top Corridors list
+    function populateCorridors(corridors) {
+      const container = document.getElementById('corridors-list');
+      const sorted = [...corridors].sort((a, b) => b.trip_count - a.trip_count).slice(0, 6);
+      
+      container.innerHTML = sorted.map((c, i) => `
+        <div class="corridor-item" onclick="focusCorridor([${c.origin}], [${c.destination}])" style="cursor: pointer;">
+          <div class="corridor-header">
+            <span>#${i+1} Corridor</span>
+            <span class="corridor-tag">${c.trip_count.toLocaleString()} Trips</span>
+          </div>
+          <div class="corridor-stats">
+            <span>&bull; ${Number(c.avg_distance_km).toFixed(2)} km</span>
+            <span>&bull; ${Number(c.avg_duration_min).toFixed(1)} min</span>
+            <span>&bull; ${Number(c.avg_speed_kmh).toFixed(1)} km/h</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.focusCorridor = function(origin, dest) {
+      const midLon = (origin[0] + dest[0]) / 2;
+      const midLat = (origin[1] + dest[1]) / 2;
+      deckgl.setProps({
+        initialViewState: {
+          longitude: midLon,
+          latitude: midLat,
+          zoom: 14.5,
+          pitch: 60,
+          bearing: -15,
+          transitionDuration: 1200
+        }
+      });
+    };
+
+    // Event Listeners for UI Controls
+    document.getElementById('toggle-hexagons').addEventListener('change', e => {
+      showHexagons = e.target.checked;
+      renderLayers();
+    });
+
+    document.getElementById('toggle-arcs').addEventListener('change', e => {
+      showArcs = e.target.checked;
+      renderLayers();
+    });
+
+    document.getElementById('toggle-stations').addEventListener('change', e => {
+      showStations = e.target.checked;
+      renderLayers();
+    });
+
+    document.getElementById('elevation-slider').addEventListener('input', e => {
+      elevationScale = parseFloat(e.target.value) * 0.25;
+      document.getElementById('elevation-val').innerText = `${e.target.value}x`;
+      renderLayers();
+    });
+
+    document.getElementById('arc-filter-slider').addEventListener('input', e => {
+      minArcTrips = parseInt(e.target.value);
+      document.getElementById('arc-filter-val').innerText = `\u2265 ${minArcTrips} trips`;
+      renderLayers();
+    });
+
+    document.getElementById('hour-slider').addEventListener('input', e => {
+      const h = parseInt(e.target.value);
+      let cat = "Night";
+      if (h >= 6 && h < 10) cat = "Morning Rush";
+      else if (h >= 10 && h < 16) cat = "Midday";
+      else if (h >= 16 && h < 20) cat = "Evening Rush";
+      document.getElementById('hour-val').innerText = `${h.toString().padStart(2, '0')}:00 (${cat})`;
+    });
+
+    // Fetch initial datasets
+    async function loadData() {
+      try {
+        console.log("Loading datasets from visualizer API...");
+        const [hexRes, odRes, liveRes, sumRes] = await Promise.all([
+          fetch('/api/hexagons').then(r => r.json()),
+          fetch('/api/od_flows').then(r => r.json()),
+          fetch('/api/live_stations').then(r => r.json()),
+          fetch('/api/summary').then(r => r.json())
+        ]);
+
+        hexData = hexRes;
+        odData = odRes;
+        liveData = liveRes;
+
+        // Update KPI values
+        document.getElementById('kpi-trips').innerText = sumRes.total_cleansed_trips.toLocaleString();
+        document.getElementById('kpi-hexagons').innerText = sumRes.active_hexagons_res8;
+        document.getElementById('kpi-corridors').innerText = sumRes.active_od_corridors;
+        document.getElementById('kpi-fleet').innerText = sumRes.total_live_fleet.toLocaleString();
+        document.getElementById('kpi-speed').innerText = `${sumRes.mean_speed_kmh} km/h`;
+
+        populateCorridors(odData);
+        renderLayers();
+        console.log("Visualizer initialized successfully!");
+      } catch (err) {
+        console.error("Error loading visualizer data:", err);
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>

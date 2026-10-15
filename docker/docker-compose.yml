@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  urban_mobility_postgis:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: urban_mobility_postgis
+    environment:
+      POSTGRES_DB: urban_mobility_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgis_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ../src/database/schema_postgis.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d urban_mobility_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  urban_mobility_visualizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: urban_mobility_visualizer
+    ports:
+      - "8060:8060"
+    environment:
+      - PORT=8060
+      - DB_PATH=/app/data/gold/urban_mobility_lakehouse.db
+    volumes:
+      - ../data:/app/data:ro
+    depends_on:
+      urban_mobility_postgis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgis_data:
+    driver: local

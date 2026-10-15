@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large Databases & Raw Lakehouse (100% reproducible via src/ pipeline)
+data/bronze/*.parquet
+data/bronze/*.zip
+data/bronze/*.csv
+data/silver/*.parquet
+data/gold/fact_indexed_mobility_trips.parquet
+*.db
+*.sqlite
+*.sqlite3
+
+# Retain Gold Mart Parquet files for instant visualization
+!data/gold/gold_h3_spatial_density.parquet
+!data/gold/gold_origin_destination_matrix.parquet
+!data/gold/gold_live_h3_telemetry.parquet
+!data/gold/gold_hourly_temporal_pulse.parquet
