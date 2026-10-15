@@ -109,7 +109,7 @@ SUMMARY_PAYLOAD = json.dumps({
     "timestamp": pd.Timestamp.now().isoformat()
 })
 
-# Hourly map: { hour: { cell_id: { count, speed } } }
+# Hourly map & city-wide hourly metrics
 hourly_map = {h: {} for h in range(24)}
 for _, row in df_hourly.iterrows():
     h = int(row["pickup_hour"])
@@ -118,7 +118,25 @@ for _, row in df_hourly.iterrows():
         "count": int(row["hourly_trip_count"]),
         "speed": round(float(row["avg_speed"]), 1)
     }
-HOURLY_PAYLOAD = json.dumps(hourly_map)
+
+hourly_speeds = {}
+hourly_trip_totals = {}
+for h in range(24):
+    h_subset = df_hourly[df_hourly["pickup_hour"] == h]
+    if len(h_subset) > 0 and h_subset["hourly_trip_count"].sum() > 0:
+        weighted_spd = (h_subset["hourly_trip_count"] * h_subset["avg_speed"]).sum() / h_subset["hourly_trip_count"].sum()
+        hourly_speeds[h] = round(float(weighted_spd), 2)
+        hourly_trip_totals[h] = int(h_subset["hourly_trip_count"].sum())
+    else:
+        hourly_speeds[h] = 15.55
+        hourly_trip_totals[h] = 0
+
+HOURLY_PAYLOAD = json.dumps({
+    "cells": hourly_map,
+    "hourly_speeds": hourly_speeds,
+    "hourly_trip_totals": hourly_trip_totals,
+    "global_mean_speed": round(float(df_density["avg_speed_kmh"].mean()), 2)
+})
 
 
 def background_telemetry_poller():

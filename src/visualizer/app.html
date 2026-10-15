@@ -416,18 +416,18 @@
     </div>
     <div class="kpi-card glass-panel" style="border-left-color: #818cf8;">
       <div class="kpi-label">3D OD Corridors</div>
-      <div class="kpi-value" id="kpi-corridors">625</div>
-      <div class="kpi-sub">Flow Vectors</div>
+      <div class="kpi-value" id="kpi-corridors" style="transition: all 0.3s ease;">625</div>
+      <div class="kpi-sub" id="kpi-corridors-sub">625 Active Corridors</div>
     </div>
     <div class="kpi-card glass-panel" style="border-left-color: #34d399;">
       <div class="kpi-label">Live Active Fleet</div>
-      <div class="kpi-value" id="kpi-fleet" style="transition: color 0.5s ease;">34,043</div>
+      <div class="kpi-value" id="kpi-fleet" style="transition: all 0.5s ease;">33,896</div>
       <div class="kpi-sub" id="live-fleet-sub">&bull; Live Streaming Feed</div>
     </div>
     <div class="kpi-card glass-panel" style="border-left-color: #fbbf24;">
       <div class="kpi-label">Avg Urban Velocity</div>
-      <div class="kpi-value" id="kpi-speed">11.7 km/h</div>
-      <div class="kpi-sub">Haversine Geodesic</div>
+      <div class="kpi-value" id="kpi-speed" style="transition: all 0.4s ease;">11.39 km/h</div>
+      <div class="kpi-sub" id="kpi-speed-sub">At 17:00 (Evening Rush)</div>
     </div>
   </div>
 
@@ -596,8 +596,9 @@
       if (obj.properties && obj.properties.h3_index) {
         const p = obj.properties;
         let activeHourCount = p.total_pickups;
-        if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][p.h3_index]) {
-          activeHourCount = hourlyData[currentHour][p.h3_index].count;
+        const cellHourly = (hourlyData && hourlyData.cells) ? hourlyData.cells[currentHour] : (hourlyData ? hourlyData[currentHour] : null);
+        if (cellHourly && cellHourly[p.h3_index]) {
+          activeHourCount = cellHourly[p.h3_index].count;
         }
 
         tooltip.innerHTML = `
@@ -649,16 +650,18 @@
             getElevation: f => {
               const cell = f.properties.h3_index;
               let count = f.properties.total_pickups;
-              if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][cell]) {
-                count = hourlyData[currentHour][cell].count * 18;
+              const cellHourly = (hourlyData && hourlyData.cells) ? hourlyData.cells[currentHour] : (hourlyData ? hourlyData[currentHour] : null);
+              if (cellHourly && cellHourly[cell]) {
+                count = cellHourly[cell].count * 18;
               }
               return Math.max(30, count * elevationScale);
             },
             getFillColor: f => {
               const cell = f.properties.h3_index;
               let count = f.properties.total_pickups;
-              if (hourlyData && hourlyData[currentHour] && hourlyData[currentHour][cell]) {
-                count = hourlyData[currentHour][cell].count * 18;
+              const cellHourly = (hourlyData && hourlyData.cells) ? hourlyData.cells[currentHour] : (hourlyData ? hourlyData[currentHour] : null);
+              if (cellHourly && cellHourly[cell]) {
+                count = cellHourly[cell].count * 18;
               }
               return getHexColor(count);
             },
@@ -758,6 +761,70 @@
       });
     };
 
+    // ============================================================================
+    // REFACTORED DYNAMIC INDICATOR ENGINE (Indicators 3, 4, 5)
+    // ============================================================================
+
+    /**
+     * Indicator 3: 3D OD Corridors (Dynamic with Trip Count & Volume Share)
+     */
+    function updateCorridorsIndicator(filteredCount, totalCount, filteredTrips, totalTrips) {
+      const el = document.getElementById('kpi-corridors');
+      const subEl = document.getElementById('kpi-corridors-sub');
+      if (el) el.innerText = filteredCount.toLocaleString();
+      if (subEl) {
+        const pct = totalTrips > 0 ? ((filteredTrips / totalTrips) * 100).toFixed(1) : '100';
+        subEl.innerText = `${pct}% Trips Included`;
+      }
+    }
+
+    /**
+     * Indicator 4: Live Active Fleet (Continuously Streaming Telemetry)
+     */
+    function updateLiveFleetIndicator(fleetCount, syncTimeStr) {
+      const el = document.getElementById('kpi-fleet');
+      const subEl = document.getElementById('live-fleet-sub');
+      if (el) {
+        el.innerText = fleetCount.toLocaleString();
+        el.style.color = '#10b981';
+        setTimeout(() => { el.style.color = '#f8fafc'; }, 1000);
+      }
+      if (subEl) {
+        subEl.innerText = `● Synced ${syncTimeStr}`;
+      }
+    }
+
+    /**
+     * Indicator 5: Average Urban Velocity (Dynamically Linked to Diurnal Hour)
+     */
+    function updateVelocityIndicator(hour) {
+      const el = document.getElementById('kpi-speed');
+      const subEl = document.getElementById('kpi-speed-sub');
+      if (!hourlyData || !hourlyData.hourly_speeds) return;
+
+      const spd = hourlyData.hourly_speeds[hour] !== undefined ? hourlyData.hourly_speeds[hour] : (hourlyData.global_mean_speed || 11.66);
+      if (el) {
+        el.innerText = `${spd} km/h`;
+        // Color tint: faster speed (green/mint), slower speed/congestion (coral/red)
+        if (spd < 11.4) {
+          el.style.color = '#f87171'; // Congested / Rush Hour
+        } else if (spd < 12.5) {
+          el.style.color = '#fbbf24'; // Moderate
+        } else {
+          el.style.color = '#34d399'; // Free Flow
+        }
+        setTimeout(() => { el.style.color = '#f8fafc'; }, 900);
+      }
+
+      if (subEl) {
+        let phase = "Night Flow";
+        if (hour >= 6 && hour < 10) phase = "Morning Rush";
+        else if (hour >= 10 && hour < 16) phase = "Midday Traffic";
+        else if (hour >= 16 && hour < 20) phase = "Evening Rush";
+        subEl.innerText = `At ${hour.toString().padStart(2, '0')}:00 (${phase})`;
+      }
+    }
+
     // Event Listeners for UI Controls
     document.getElementById('toggle-hexagons').addEventListener('change', e => {
       showHexagons = e.target.checked;
@@ -785,7 +852,9 @@
       document.getElementById('arc-filter-val').innerText = `\u2265 ${minArcTrips} trips`;
       if (odData) {
         const filtered = odData.filter(d => d.trip_count >= minArcTrips);
-        document.getElementById('kpi-corridors').innerText = filtered.length;
+        const filteredTrips = filtered.reduce((acc, c) => acc + c.trip_count, 0);
+        const totalTrips = odData.reduce((acc, c) => acc + c.trip_count, 0);
+        updateCorridorsIndicator(filtered.length, odData.length, filteredTrips, totalTrips);
         populateCorridors(filtered);
       }
       renderLayers();
@@ -802,6 +871,7 @@
     document.getElementById('hour-slider').addEventListener('input', e => {
       currentHour = parseInt(e.target.value);
       updateHourDisplay(currentHour);
+      updateVelocityIndicator(currentHour);
       renderLayers();
     });
 
@@ -821,6 +891,7 @@
           currentHour = (currentHour + 1) % 24;
           document.getElementById('hour-slider').value = currentHour;
           updateHourDisplay(currentHour);
+          updateVelocityIndicator(currentHour);
           renderLayers();
         }, 800);
       }
@@ -843,16 +914,22 @@
         liveData = liveRes;
         hourlyData = hourRes;
 
-        // Update KPI values
+        // Update Static KPI values
         document.getElementById('kpi-trips').innerText = sumRes.total_cleansed_trips.toLocaleString();
         document.getElementById('kpi-hexagons').innerText = sumRes.active_hexagons_res8;
-        document.getElementById('kpi-corridors').innerText = sumRes.active_od_corridors;
-        document.getElementById('kpi-fleet').innerText = sumRes.total_live_fleet.toLocaleString();
-        document.getElementById('kpi-speed').innerText = `${sumRes.mean_speed_kmh} km/h`;
 
-        populateCorridors(odData);
+        // Initialize Dynamic Indicators (3, 4, 5)
+        const totalTrips = odData.reduce((acc, c) => acc + c.trip_count, 0);
+        const filteredOD = odData.filter(d => d.trip_count >= minArcTrips);
+        const filteredTrips = filteredOD.reduce((acc, c) => acc + c.trip_count, 0);
+        updateCorridorsIndicator(filteredOD.length, odData.length, filteredTrips, totalTrips);
+        
+        updateLiveFleetIndicator(sumRes.total_live_fleet, new Date().toLocaleTimeString());
+        updateVelocityIndicator(currentHour);
+
+        populateCorridors(filteredOD);
         renderLayers();
-        console.log("Visualizer initialized successfully with full hourly pulse!");
+        console.log("Visualizer initialized with refactored dynamic indicator engine!");
       } catch (err) {
         console.error("Error loading visualizer data:", err);
       }
@@ -879,23 +956,18 @@
           fetch('/api/summary').then(r => r.json())
         ]);
         liveData = liveRes;
-        const fleetEl = document.getElementById('kpi-fleet');
-        const newCount = sumRes.total_live_fleet.toLocaleString();
-        fleetEl.innerText = newCount;
+        
+        // Update Indicator 4 dynamically
+        const nowStr = new Date().toLocaleTimeString();
+        updateLiveFleetIndicator(sumRes.total_live_fleet, nowStr);
 
-        // Visual flash highlight when live telemetry syncs
-        fleetEl.style.color = '#10b981';
-        setTimeout(() => { fleetEl.style.color = '#f8fafc'; }, 1200);
-
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString();
         const timeBadge = document.getElementById('live-time-str');
         if (timeBadge) {
-          timeBadge.innerText = `LIVE GBFS FEED • 2,519 STATIONS (SYNCED ${timeStr})`;
+          timeBadge.innerText = `LIVE GBFS FEED • 2,519 STATIONS (SYNCED ${nowStr})`;
         }
 
         renderLayers();
-        console.log(`[LIVE CLIENT REFRESH] Telemetry updated at ${timeStr}: ${newCount} bikes`);
+        console.log(`[LIVE CLIENT REFRESH] Telemetry updated at ${nowStr}: ${sumRes.total_live_fleet} bikes`);
       } catch (e) {
         console.warn("Auto-refresh error:", e);
       }
