@@ -98,9 +98,7 @@ $$\Delta \phi = \phi_2 - \phi_1, \quad \Delta \lambda = \lambda_2 - \lambda_1$$
 
 $$a = \sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1) \cdot \cos(\phi_2) \cdot \sin^2\left(\frac{\Delta \lambda}{2}\right)$$
 
-$$c = 2 \cdot \arctan2\left(\sqrt{a}, \sqrt{1 - a}\right)$$
-
-$$d_{\text{haversine}} = R \cdot c$$
+$$d_{\text{haversine}} = 2 R \cdot \arcsin\left(\sqrt{a}\right)$$
 
 Where:
 * $R \approx 6,371.0088 \text{ km}$ (WGS84 Earth mean radius).
@@ -111,16 +109,16 @@ Where:
 ### 5.2 Kinematic Velocity & Spatial-Temporal Anomaly Boundaries
 The instantaneous average urban transit speed is derived kinematically:
 
-$$v = \frac{d_{\text{haversine}}}{\Delta t} = \frac{d_{\text{haversine}}}{(t_{\text{ended\_at}} - t_{\text{started\_at}}) / 3600} \quad [\text{km/h}]$$
+$$v = \frac{d_{\text{haversine}}}{\Delta t} = \frac{d_{\text{haversine}}}{(t_{\text{end}} - t_{\text{start}}) / 3600} \quad [\text{km/h}]$$
 
-A trip $\mathcal{T} = (\mathbf{x}_{\text{start}}, \mathbf{x}_{\text{end}}, t_{\text{start}}, t_{\text{end}})$ is classified as valid iff it satisfies the spatio-temporal boundary conditions:
+A trip trajectory $\mathcal{T}$ between origin-destination endpoints is classified as valid iff it satisfies all spatio-temporal boundary conditions:
 
-$$\mathcal{C}_{\text{valid}} = \left\{ \mathcal{T} \;\middle|\; \begin{aligned} 
-&40.50^\circ \le \phi \le 40.95^\circ \land -74.10^\circ \le \lambda \le -73.70^\circ \\
-&60\text{ s} \le \Delta t \le 10,800\text{ s} \quad (1\text{ min} \le \Delta t \le 180\text{ min}) \\
-&0.10\text{ km} \le d \le 45.00\text{ km} \\
-&0.50\text{ km/h} \le v \le 60.00\text{ km/h}
-\end{aligned} \right\}$$
+$$\mathcal{C}_{\text{valid}} = \begin{cases}
+40.50^\circ \le \phi \le 40.95^\circ, \quad -74.10^\circ \le \lambda \le -73.70^\circ & (\text{NYC Metro Bounding Box}) \\
+60\text{ s} \le \Delta t \le 10800\text{ s} & (\text{Duration: } 1\text{ min} \le \Delta t \le 180\text{ min}) \\
+0.10\text{ km} \le d \le 45.00\text{ km} & (\text{Displacement Filter}) \\
+0.50\text{ km/h} \le v \le 60.00\text{ km/h} & (\text{Kinematic Speed Bounds})
+\end{cases}$$
 
 ---
 
@@ -140,7 +138,7 @@ $$\frac{d_{\text{diagonal}}}{d_{\text{orthogonal}}} = \sqrt{2} \approx 1.4142 \q
 
 In the Uber H3 hexagonal grid:
 
-$$\forall i \in \{1, 2, 3, 4, 5, 6\}, \quad \| \mathbf{c}_0 - \mathbf{c}_i \| = \delta = \text{constant}$$
+$$\forall i \in \{1, 2, \dots, 6\}, \quad \| \mathbf{c}_0 - \mathbf{c}_i \| = \delta = \text{constant}$$
 
 Every centroid is equidistant to all six adjacent neighbors, eliminating the **Modifiable Areal Unit Problem (MAUP)** and minimizing edge effect bias.
 
@@ -153,7 +151,7 @@ $$\mathbf{T}(H_o, H_d) = \sum_{k=1}^N \mathbb{I}\left( \mathcal{H}_8(\phi_{\text
 
 The weighted corridor velocity and commuter ratio:
 
-$$\bar{v}(H_o, H_d) = \frac{\sum_{k \in \mathbf{T}} v^{(k)}}{|\mathbf{T}(H_o, H_d)|}, \quad \rho_{\text{commuter}}(H_o, H_d) = \frac{\sum_{k \in \mathbf{T}} \mathbb{I}(\text{member}^{(k)})}{|\mathbf{T}(H_o, H_d)|} \times 100\%$$
+$$\bar{v}(H_o, H_d) = \frac{\sum_{k \in \mathbf{T}} v^{(k)}}{|\mathbf{T}(H_o, H_d)|}, \quad \rho_{\text{commuter}}(H_o, H_d) = \frac{\sum_{k \in \mathbf{T}} \mathbb{I}(\text{member}^{(k)})}{|\mathbf{T}(H_o, H_d)|} \times 100$$
 
 ---
 
